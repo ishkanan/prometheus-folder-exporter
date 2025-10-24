@@ -88,7 +88,7 @@ def get_dir_info(path: str, scanned_at: Timestamp) -> Optional[DirInfo]:
 def get_subdirs_info(dir_path: str) -> Generator[DirInfo | None, None, None]:
     try:
         children = [
-            os.path.abspath(os.path.join(dir_path, c))
+            os.path.join(dir_path, c)
             for c in os.listdir(dir_path)
         ]
 
