@@ -1,9 +1,17 @@
 FROM python:3.13-alpine
 
-RUN apk add tini
+ADD prometheus_folder_exporter /tmp/src
 
-ADD . /tmp/src
+RUN apk update && \
+    apk add tini && \
+    pip install -r /tmp/src/requirements.txt && \
+    mkdir /data
 
-RUN pip install /tmp/src
+ENV EXPORTED_DIRS
+ENV METRICS_NAMESPACE
+ENV PORT
+ENV SCAN_DELAY_MINS
 
 ENTRYPOINT ["tini", "--"]
+
+CMD ["/usr/bin/python", "-m", "prometheus_folder_exporter"]

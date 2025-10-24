@@ -1,12 +1,16 @@
 """
-Define the metrics we export
+Define the metrics we export.
 """
+import os
+
 from prometheus_client import Gauge
 
-NAMESPACE = "dirsize"
+NAMESPACE = os.environ.get("METRICS_NAMESPACE", "folder-exporter")
 
 TOTAL_SIZE = Gauge(
-    "total_size_bytes", "Total Size of the Directory (in bytes)", namespace=NAMESPACE,
+    "total_size_bytes",
+    "Total Size of the Directory (in bytes)",
+    namespace=NAMESPACE,
     labelnames=("directory",)
 )
 
@@ -27,13 +31,6 @@ OLDEST_MTIME = Gauge(
 ENTRIES_COUNT = Gauge(
     "entries_count",
     "Total number of entries (files, directories & links) in the directory",
-    namespace=NAMESPACE,
-    labelnames=("directory",)
-)
-
-PROCESSING_TIME = Gauge(
-    "processing_time",
-    "Time it took to process the directory (in seconds)",
     namespace=NAMESPACE,
     labelnames=("directory",)
 )
