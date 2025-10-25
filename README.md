@@ -77,6 +77,8 @@ services:
     container_name: folder-exporter
     image: prometheus-folder-exporter:latest
     restart: unless-stopped
+    environment:
+      - EXPORTED_DIRS=/data
     volumes:
       - /home/user1/Desktop:/data/desktop1:ro
       - /home/user2/Desktop:/data/desktop2:ro
