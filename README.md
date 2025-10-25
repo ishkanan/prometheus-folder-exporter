@@ -22,7 +22,7 @@ folder_exporter_total_size_bytes{folder="/logs/2025-01-01"} 1500.0
 folder_exporter_total_size_bytes{folder="/logs/2025-01-02"} 500.0
 ```
 
-Note that folder contents might change during a scan. This can affect the accuracy of the final results.
+Note that folder contents might change during a scan. This can affect the accuracy of the final results. Symlinks are not followed.
 
 ## Installation
 
