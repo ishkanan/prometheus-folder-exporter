@@ -35,9 +35,9 @@ ENTRIES_COUNT = Gauge(
     labelnames=("folder",)
 )
 
-LAST_UPDATED = Gauge(
-    "last_updated_ns",
-    "Last time this folder was processed (as unix timestamp)",
+LAST_SCANNED = Gauge(
+    "last_scanned_ns",
+    "Last time this folder was scanned (as unix timestamp)",
     namespace=NAMESPACE,
     labelnames=("folder",)
 )

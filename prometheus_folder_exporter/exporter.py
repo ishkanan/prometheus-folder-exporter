@@ -1,7 +1,7 @@
 import os
 import time
 from dataclasses import dataclass
-from typing import Never, Optional, Generator
+from typing import Never, Optional
 
 from . import metrics
 
@@ -18,10 +18,19 @@ class DirInfo:
     latest_mtime: Timestamp
     oldest_mtime: Timestamp
     entries_count: int
-    scanned_at: Timestamp
 
 
-def get_dir_info(path: str, scanned_at: Timestamp) -> Optional[DirInfo]:
+def emit_dir_metrics(info: DirInfo):
+    metrics.TOTAL_SIZE.labels(info.path).set(info.size)
+    metrics.LATEST_MTIME.labels(info.path).set(info.latest_mtime)
+    metrics.OLDEST_MTIME.labels(info.path).set(info.oldest_mtime)
+    metrics.ENTRIES_COUNT.labels(info.path).set(
+        info.entries_count
+    )
+    metrics.LAST_SCANNED.labels(info.path).set(time.time())
+
+
+def scan_dir(path: str) -> Optional[DirInfo]:
     try:
         self_statinfo = os.stat(path)
     except FileNotFoundError:
@@ -33,6 +42,7 @@ def get_dir_info(path: str, scanned_at: Timestamp) -> Optional[DirInfo]:
         os.path.join(path, c)
         for c in os.listdir(path)
     ]
+
     # Split into files and directories for different kinds of traversal.
     # We count symlinks as files, but do not resolve them when checking size -
     # but do include them in the mtime calculation.
@@ -63,7 +73,7 @@ def get_dir_info(path: str, scanned_at: Timestamp) -> Optional[DirInfo]:
             oldest_mtime = stat_info.st_mtime
 
     for d in dirs:
-        dirinfo = get_dir_info(d, scanned_at)
+        dirinfo = scan_dir(d)
         if dirinfo is None:
             # The directory was deleted between the time the listing
             # was done and now.
@@ -75,17 +85,18 @@ def get_dir_info(path: str, scanned_at: Timestamp) -> Optional[DirInfo]:
         if oldest_mtime > dirinfo.latest_mtime:
             oldest_mtime = dirinfo.latest_mtime
 
-    return DirInfo(
+    info = DirInfo(
         path=path,
         size=total_size,
         latest_mtime=latest_mtime,
         oldest_mtime=oldest_mtime,
         entries_count=entries_count,
-        scanned_at=scanned_at,
     )
+    emit_dir_metrics(info)
+    return info
 
 
-def get_subdirs_info(dir_path: str) -> Generator[DirInfo | None, None, None]:
+def get_subdirs_info(dir_path: str):
     try:
         children = [
             os.path.join(dir_path, c)
@@ -95,7 +106,7 @@ def get_subdirs_info(dir_path: str) -> Generator[DirInfo | None, None, None]:
         dirs = [c for c in children if os.path.isdir(c)]
 
         for c in dirs:
-            yield get_dir_info(c, scanned_at=time.time())
+            scan_dir(c)
     except PermissionError as e:
         if e.errno == 13:
             # See https://github.com/yuvipanda/prometheus-dirsize-exporter/issues/5
@@ -125,7 +136,7 @@ def start() -> Never:
 
     print("Configuration:")
     print(f"--> Exported folders = {parent_dirs}")
-    print(f"--> Wait time = {wait_time_minutes}")
+    print(f"--> Wait time = {wait_time_minutes}m")
     print(f"--> Port = {port}")
 
     start_http_server(port)
@@ -134,14 +145,6 @@ def start() -> Never:
 
     while True:
         for parent_dir in parent_dirs:
-            for subdir_info in get_subdirs_info(parent_dir):
-                if subdir_info is None:
-                    continue
-                metrics.TOTAL_SIZE.labels(subdir_info.path).set(subdir_info.size)
-                metrics.LATEST_MTIME.labels(subdir_info.path).set(subdir_info.latest_mtime)
-                metrics.OLDEST_MTIME.labels(subdir_info.path).set(subdir_info.oldest_mtime)
-                metrics.ENTRIES_COUNT.labels(subdir_info.path).set(
-                    subdir_info.entries_count
-                )
-                metrics.LAST_UPDATED.labels(subdir_info.path).set(subdir_info.scanned_at)
+            get_subdirs_info(parent_dir)
+
         time.sleep(wait_time_minutes * 60)
