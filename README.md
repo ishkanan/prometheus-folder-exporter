@@ -1,68 +1,94 @@
-# prometheus-dirsize-exporter
+# prometheus-folder-exporter
 
-[![PyPI version](https://badge.fury.io/py/prometheus-dirsize-exporter.svg)](https://badge.fury.io/py/prometheus-dirsize-exporter)
+Export folder metrics to Prometheus.
 
-Export directory size metrics efficiently.
+## What does it do?
 
-## Why?
+This project provides a Prometheus-digestible endpoint that periodically scans
+a set of folders and exports the following information about each folder:
 
-When providing multi-user interactive computing services (with a HPC cluster
-or with JupyterHub), it's very helpful to know the home directory sizes of
-each user over time. However, as NFS is often used, running `du` constantly
-takes a long time, uses too many IOPS that we may not have many of, and is
-plain inefficient.
+- Total size (in bytes)
+- Total entry count (files, folders and symlinks)
+- Last modified time (recursively determined)
+- Last scanned time
 
-This project provides a way to keep track of directory sizes with a *budgeted*
-amount of IOPS. You can ask it to take however much time it needs but not
-use more than 100 IOPS, and it will do that. We do not necessarily need very
-up to date directory size metrics, so this is ok.
+It recursively scans each folder and generates a metric for each sub-folder. Stats for a set of siblings are included in the parent stats, like so:
+
+```
+# HELP folder_exporter_total_size_bytes Total Size of the folder (in bytes)
+# TYPE folder_exporter_total_size_bytes gauge
+folder_exporter_total_size_bytes{folder="/logs"} 2000.0
+folder_exporter_total_size_bytes{folder="/logs/2025-01-01"} 1500.0
+folder_exporter_total_size_bytes{folder="/logs/2025-01-02"} 500.0
+```
+
+Note that folder contents might change during a scan. This can affect the accuracy of the final results.
 
 ## Installation
 
-Install the package from PyPI:
+It can be set up to run natively (Python 3.13+):
 
-```bash
-pip install prometheus-dirsize-exporter
 ```
+$ pip install -r requirements.txt
+```
+
+Or built into a Docker image:
+
+```
+$ docker buildx build --no-cache -t prometheus-folder-exporter:latest .
+```
+
+And if your Docker engine supports multi-arch (MacOS Docker Desktop does):
+
+```
+$ docker buildx build --platform linux/amd64,linux/arm64 --no-cache -t prometheus-folder-exporter:latest .
+```
+
+## Configuration
+
+The app accepts runtime configuration via environment variables:
+
+| Variable          | Required | Default         | Description
+| :---------------- | :------: | :-------------- | :----------
+| EXPORTED_DIRS     | Y        |                 | Pipe-separated string of folders to scan
+| METRICS_NAMESPACE |          | folder_exporter | Metric name prefix
+| PORT              |          | 8000            | Port to listen on
+| SCAN_DELAY_MINS   |          | 5               | Minimum delay (mins) between scans
 
 ## Running
 
-You can start the process from the commandline:
+After installation, run the app natively with:
 
-```bash
-dirsize-exporter <path-to-parent-directory> <iops-budget> <wait-time-in-minutes>
+```
+$ EXPORTED_DIRS="/home/user1/Desktop|/home/user2/Desktop" python -m prometheus_folder_exporter
 ```
 
-For example, to export metrics about directories under `/home`, using no more
-than 200 IO operations per second, updating every 60minutes, you would run:
+Or with the Docker CLI:
 
-```bash
-dirsize-exporter /home 200 60
+```
+$ docker run --rm -u root -e EXPORTED_DIRS="/data" -p 8000:8000 -v /home/user1/Desktop:/data/desktop1:ro -v /home/user2/Desktop:/data/desktop2:ro prometheus-folder-exporter:latest
 ```
 
-You can check out the metrics by hitting `http://localhost:8000`. The port can
-be controlled via a `--port` argument.
+Or via Docker Compose:
 
-## Metrics recorded
+```
+services:
+  folder-exporter:
+    container_name: folder-exporter
+    image: prometheus-folder-exporter:latest
+    restart: unless-stopped
+    volumes:
+      - /home/user1/Desktop:/data/desktop1:ro
+      - /home/user2/Desktop:/data/desktop2:ro
+    ports:
+      - 8000:8000
+    user: root
+```
 
-The following metrics are recorded for all top level subidrectories of the
-parent directory:
+### Docker notes
 
-- Total Size (in bytes)
-- Last Modified (including all the descendents)
-- Total Number of Entries (Files, directories & symlinks)
-- Processing Time required to gather this information
-  This is only reported if `--enable-detailed-processing-time-metric` flag is
-  passed, to prevent possible explosion of stored size of prometheus metrics
-  when collected. This information is also not particularly useful outside
-  of debugging this exporter, and as it varies each run, compresses poorly.
-- Last updated
+Each volume can be mounted as a sub-folder in `/data` and set `EXPORTED_DIRS=/data`. This is the most convenient way of scanning multiple folders and ensures unique `folder` labels across all metrics.
 
-## Limitations
+Be sure to run the container as a user that has permissions to traverse the folders. The examples above use `root`, but ultimately it will be based on your security preferences.
 
-- As directory contents might change in the course of a single run as we wait
-  for budgets to become available, information about a directory may not be
-  exactly correct immediately.
-- Because we do not spread the IOPS through time, the IO usage is 'spiky' -
-  all IOPS get done at the beginning of a second, and then it goes silent.
-  If you have a big IOPS budget, this can cause performance degradation.
+It is also recommended to pass `:ro` to each volume mount to prevent the container from interfering with the filesystem.
